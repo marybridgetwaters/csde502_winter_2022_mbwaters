@@ -1,0 +1,210 @@
+---
+title: "CSDE 502 Winter 2021, Assignment 10"
+author: "mbwaters"
+output: 
+    bookdown::html_document2:
+        number_sections: true
+        self_contained: true
+        code_folding: hide
+        toc: true
+        toc_float:
+            collapsed: true
+            smooth_scroll: false
+    pdf_document:
+        number_sections: true
+        toc: true
+        fig_cap: yes
+        keep_tex: yes
+urlcolor: blue 
+---
+
+the URL to my Rmd file for assignment 10 on github is: 
+
+
+```{r}
+library(captioner)
+library(tidyverse)
+library(magrittr)
+library(knitr)
+library(kableExtra)
+library(haven)
+
+figure_nums <- captioner(prefix = "Figure")
+table_nums <- captioner(prefix = "Table")
+
+# path to this file name
+if (!interactive()) {
+    fnamepath <- knitr::current_input(dir = TRUE)
+} else {
+    fnamepath <- ""
+}
+```
+
+
+```{r}
+# download data
+download.file("https://raw.githubusercontent.com/marybridgetwaters/csde502_winter_2022_mbwaters/main/turnover.csv", "babushkin.csv")
+babushkin <- read.csv(paste0(getwd(), "/babushkin.csv"))
+```
+
+This data was downloaded from this URL (https://www.kaggle.com/davinwijaya/employee-turnover), but was originally posted on Edward Babushkin's blog (https://edwvb.blogspot.com/2017/10/employee-turnover-how-to-predict-individual-risks-of-quitting.html). I've posted it to my GitHub for ease of use for this project.
+
+This is the babushkin data set. It depicts employee turnover data from a Russian company. It includes `r ncol(babushkin)` variables and `r nrow(babushkin)` observations. The data set and its variables are summarized below.
+
+```{r}
+#show structure of data
+str(babushkin)
+```
+
+```{r}
+#show summary of variables
+summary(babushkin)
+```
+
+```{r}
+#convert variables that should be factors to factors
+babushkin$event <- as.factor(babushkin$event)
+babushkin$gender <- as.factor(babushkin$gender)
+babushkin$industry <- as.factor(babushkin$industry)
+babushkin$profession <- as.factor(babushkin$profession)
+babushkin$traffic <- as.factor(babushkin$traffic)
+babushkin$coach <- as.factor(babushkin$coach)
+babushkin$head_gender <- as.factor(babushkin$head_gender)
+babushkin$greywage <- as.factor(babushkin$greywage)
+babushkin$way <- as.factor(babushkin$way)
+#check the levels of these variables to understand how they are coded
+levels(babushkin$event)
+levels(babushkin$gender)
+levels(babushkin$industry)
+levels(babushkin$profession)
+levels(babushkin$traffic)
+levels(babushkin$coach)
+levels(babushkin$head_gender)
+levels(babushkin$greywage)
+levels(babushkin$way)
+```
+
+The documentation for the variables is as follows...
+stag: employee's employment time at the company in months
+event: employee turnover, (1 if employee left the company within the observation time, 0 otherwise)
+gender: employee's gender (m=male, f=female)
+age: employee's age in years
+industry: the department within the company in which the employee was employed (" HoReCa" which means catering, Agriculture, Banks, Building, Consult, etc, IT, manufacture, Mining, Pharma, PowerGeneration, RealEstate, Retail, State, Telecom, transport)
+profession: employee's job title
+traffic: how the employee joined the company (advert, empjs, friends, KA, rabrecNErab, recNErab, referal, youjs)
+coach: whether the employee received training while on probation, (my head, no, yes), it's not clear what "my head" means here
+head_gender: employee's boss's gender (m=male, f=female)
+greywage: type of salary, a "grey wage" is a salary that involves a combination of a salary that is reported to the government for tax purposes ("white") and a salary that is not reported to the government (grey, white)
+way: how the employee travels to work (bus, car, foot)
+extraversion: employee's extraversion score from Big5 personality test
+independ: employee's independence score from Big5 personality test
+selfcontrol: employee's self control score from Big5 personality test
+anxiety: employee's anxiety score from Big5 personality test
+novator: employee's innovation score from Big5 personality test
+
+```{r}
+#recode the variables to be more readable
+#rename levels of Industry
+babushkin$industry <- recode(babushkin$industry,' HoReCa' = "Catering", Consult = "Consulting", etc = "Other", manufacture = "Manufacturing", Pharma = "Pharmaceuticals", PowerGeneration = "Power Generation", RealEstate = "Real Estate", transport = "Transport", .default = levels(babushkin$industry))
+#recode levels of Profession
+babushkin$profession <- recode(babushkin$profession, Accounting = "Accountant", BusinessDevelopment = "Business Development", Consult = "Consultant", etc = "Other", Finanñe = "Finance", manage = "Management", Teaching = "Teacher", .default = levels(babushkin$profession))
+#recode event variable
+babushkin$event <- factor(babushkin$event, levels = 0:1, labels = c("F", "T"))
+#rename stag, event, and way variables and select only relevant variables 
+babushkin <- babushkin %>% rename(time_months = stag, left = event, commute = way) %>% select(time_months, left, gender, age, industry, profession, head_gender, greywage, commute)
+```
+
+Our data now only contains `r ncol(babushkin)` variables. They are summarized below. 
+
+```{r}
+summary(babushkin)
+```
+
+The documentation for these new variables is as follows...
+time_months: employee employment time in months
+left: whether the employee left the company or not (T/F)
+gender: employee's gender(f/m)
+age: employee's age in years
+industry: employee's industry (`r levels(babushkin$industry)`)
+profession: employee's profession (`r levels(babushkin$profession)`)
+head_gender: employee's boss's gender (f/m)
+greywage: employee's salary type (grey/white)
+commute: employee's commute type (bus, car, foot)
+
+```{r}
+#summary stats for numeric variables
+babushkin_summary <- babushkin %>% group_by(left, gender,  head_gender, greywage, commute) %>% summarise(mean_age = mean(age), median_age  = median(age), sd_age = sd(age), mean_employment_time_months = mean(time_months), median_employment_time_months = median(time_months), sd_employment_time_months = sd(time_months))
+head(babushkin_summary) %>%
+  knitr::kable() %>%
+  kableExtra::kable_classic()
+```
+
+We are interested in examining commuting patterns based on gender, age, profession, and greywage status. 
+
+```{r}
+#summary of only this data
+babushkin_commute <- babushkin %>% select(gender, age, profession, greywage, commute) %>% group_by(gender, age, profession, greywage, commute) %>% summarise(n = n())
+head(babushkin_commute) %>%
+  knitr::kable() %>%
+  kableExtra::kable_classic()
+```
+
+Age is a continuous variable and is difficult to examine when we want to view a summary. Let's create age groups to better understand trends in this data. 
+
+```{r}
+babushkin_commute <- babushkin %>% select(gender, age, profession, greywage, commute) %>% mutate(age_group = case_when(age >= 18 & age <= 26 ~ "18-26", age >= 27 & age <= 36 ~ "27-36", age >= 37 & age <= 47 ~ "37-47", age >= 48 & age <= 58 ~ "48-58"))
+head(babushkin_commute) %>%
+  knitr::kable() %>%
+  kableExtra::kable_classic()
+```
+
+How do gender and age group affect commuting patterns?
+
+```{r}
+babushkin_commute_summary <- babushkin_commute %>% select(gender, commute, age_group) %>% group_by(gender, commute, age_group) %>% summarise(n = n())
+head(babushkin_commute_summary) %>%
+  knitr::kable() %>%
+  kableExtra::kable_classic()
+```
+
+```{r}
+#calculations to  calculate percent of groups
+f_18_26 <- babushkin_commute_summary %>% filter(gender == "f", age_group == "18-26")
+f_27_36 <- babushkin_commute_summary %>% filter(gender == "f", age_group == "27-36")
+f_37_47 <- babushkin_commute_summary %>% filter(gender == "f", age_group == "37-47")
+f_48_58 <- babushkin_commute_summary %>% filter(gender == "f", age_group == "48-58")
+m_18_26 <- babushkin_commute_summary %>% filter(gender == "m", age_group == "18-26")
+m_27_36 <- babushkin_commute_summary %>% filter(gender == "m", age_group == "27-36")
+m_37_47 <- babushkin_commute_summary %>% filter(gender == "m", age_group == "37-47")
+m_48_58 <- babushkin_commute_summary %>% filter(gender == "m", age_group == "48-58")
+#create percent column
+babushkin_commute_summary <- babushkin_commute_summary %>% mutate(pct = case_when(gender == "f" & age_group == "18-26" ~ (n/sum(f_18_26$n))*100, gender == "f" & age_group == "27-36" ~ (n/sum(f_27_36$n))*100, gender == "f" & age_group == "37-47" ~ (n/sum(f_37_47$n))*100, gender == "f" & age_group == "48-58" ~ (n/sum(f_48_58$n))*100, gender == "m" & age_group == "18-26" ~ (n/sum(m_18_26$n))*100, gender == "m" & age_group == "27-36" ~ (n/sum(m_27_36$n))*100, gender == "m" & age_group == "37-47" ~ (n/sum(m_37_47$n))*100, gender == "m" & age_group == "48-58" ~ (n/sum(m_48_58$n))*100))
+```
+
+```{r}
+#recode female and male for graphing purposes
+babushkin_commute$gender <- recode(babushkin_commute$gender, m = "Male", f = "Female")
+ggplot(babushkin_commute, aes(age_group, commute)) + geom_jitter() + theme_bw() + facet_wrap(~gender)
+```
+From the plot above, it appears that females are more likely than males to commute by bus. Our data set is mostly female though, so we should really compare percents or proportions. 
+
+```{r}
+#recode female and male for graphing purposes
+babushkin_commute_summary$gender <- recode(babushkin_commute_summary$gender, m = "Male", f = "Female")
+ggplot(babushkin_commute_summary, aes(age_group, pct)) + geom_bar(aes(fill = commute), position = "dodge", stat = "identity") + theme_bw() + facet_wrap(~gender) + xlab("Age Group (years)") + ylab("Percent")
+```
+
+This plot shows us that across all age groups a higher proportion of females ride the bus compared to males. Additionally, the group with the highest proportion of commuters by car are males aged 27-36 years. There are no females in the 48-58 year age group who commute by foot. Most of this company's employees commute by bus. 
+
+How do commuting patterns affect turnover?
+
+```{r}
+babushkin_turnover <- babushkin %>% select(left, commute) %>% group_by(left, commute) %>% summarise(n = n())
+babushkin_turnover %>%
+  knitr::kable() %>%
+  kableExtra::kable_classic()
+```
+
+People who commute by foot were much less likely to leave the company during the observation period compared to people who commute by car or bus. 
+
+We may hypothesize that commuting patterns impact employee turnover when accounting for observation time (using survival analysis). We may also hypothesize that turnover may vary across gender and age groups due to differences in commuting patterns. 
