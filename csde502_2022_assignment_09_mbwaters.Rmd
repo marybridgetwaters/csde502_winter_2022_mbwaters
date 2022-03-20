@@ -1,0 +1,296 @@
+---
+title: "CSDE 502 Winter 2022, Assignment 9"
+author: "mbwaters"
+contact: "mbwaters@uw.edu"
+output: 
+    bookdown::html_document2:
+        number_sections: true
+        self_contained: true
+        code_folding: hide
+        toc: true
+        toc_float:
+            collapsed: true
+            smooth_scroll: false
+    pdf_document:
+        number_sections: true
+        toc: true
+        fig_cap: yes
+        keep_tex: yes
+urlcolor: blue 
+---
+
+<!-- This is a CSS style sheet for the answers -->
+<style>
+h1 {
+  font-size: 22px;}
+  
+h2 {
+  font-size: 18px;}
+  
+h3 {
+  font-size: 18px;}
+
+p {
+  font-size: 16px;}
+
+.answer {
+  font-size: 18px;
+  background-color: lightblue;
+  border: 2px solid red;
+  border-radius: 12px;
+  padding: 5px;  
+  } 
+  
+.indent {
+  background-color: lightblue;
+  padding-left: 50px;
+  
+  } 
+}
+</style>
+
+```{r}
+library(captioner)
+
+figure_nums <- captioner(prefix = "Figure")
+table_nums <- captioner(prefix = "Table")
+
+# path to this file name
+if (!interactive()) {
+    fnamepath <- knitr::current_input(dir = TRUE)
+} else {
+    fnamepath <- ""
+}
+```
+
+***Explanation***:
+This assignment is intended to give you more practice delving into the Add Health data set and in manipulating additional variables. 
+
+***Instructions***: 
+
+1. Make sure your Rmd file has no local file system dependencies (i.e., anyone should be able to recreate the output HTML using only the Rmd source file).
+1. Make a copy of this Rmd file and add answers below each question. The code that generated the answers should be included, as well as the complete source code for the document.\    
+Put your answers within the **$\lt$div class="answer"$\gt$...$\lt$/div$\gt$** tags so they will show up within the blue boxes with red borders.
+1. Change the YAML header above to identify yourself and include contact information.
+1. For any tables or figures, include captions and cross-references and any other document automation methods as necessary.
+1. Make sure your output HTML file looks appealing to the reader.
+1. Upload the final Rmd to your github repository.
+1. Download [`assn_id.txt`](http://staff.washington.edu/phurvitz/csde502_winter_2021/assignments/assn_id.txt) and include the URL to your Rmd file on github.com.
+1. Create a zip file from your copy of `assn_id.txt` and upload the zip file to the Canvas site for Assignment 1. ***The zip file should contain only the text file. Do not include any additional files in the zip file--everything should be able to run from the file you uploaded to github.com. Please use zip format and not 7z or any other compression/archive format.***
+
+
+#
+**Using the full household roster (you'll need to go back the full raw data source, [21600-0001-Data.dta](http://staff.washington.edu/phurvitz/csde502_winter_2021/data/21600-0001-Data.dta.zip)), create the following variables for each respondent. Document any decisions that you make regarding missing values, definitions, etc. in your narrative as well as in the R code.  Include a frequency tabulation and a histogram of each result.**
+
+<div class="answer">
+Answer
+</div>
+
+##
+**Total number in household**
+
+<div class="answer">
+```{r}
+#install and load tidyverse and haven
+install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+install.packages("haven", repos = "http://cran.us.r-project.org")
+library(tidyverse)
+library(haven)
+mytempdir <- tempdir()
+
+# download and unzip the larger Add Health data set
+myUrl <- "http://staff.washington.edu/phurvitz/csde502_winter_2021/data/21600-0001-Data.dta.zip"
+zipfile <- file.path(tempdir(), basename(myUrl))
+dtafile <- tools::file_path_sans_ext(zipfile)
+
+# check if the dta file exists
+if (!file.exists(dtafile)) {
+    # if the dta file doesn't exist, check for the zip file
+    # check if the zip file exists, download if necessary
+    if (!file.exists(zipfile)) {
+        curl::curl_download(url = myUrl, destfile = zipfile)
+    }
+    # unzip the downloaded zip file
+    if (file.exists(zipfile)) {
+        unzip(zipfile = zipfile, exdir = tempdir())
+    }
+}
+
+# if the data set has not been read, read it in
+if (!exists("ahcomplete")) {
+    ahcomplete <- haven::read_dta(dtafile)
+}
+
+# make the data frame by selecting columns that begin with H1HR2
+#choose HIHR2 because any HIHR variable could be chosen but you only need 1 (from HIHR2-HIHR11, household member # is notated by the letter at the end of the variable name)
+ah_h1hr2 <- ahcomplete %>%
+    # select columns
+    select(AID, starts_with("H1HR2")
+)
+#recode values to 1 or 0, to later sum
+#responses of male (1) or female (2) or refused (6) were counted as 1 (presence of household member), all other responses coded as 0
+ah_h1hr2$AID <- as.numeric(ah_h1hr2$AID)
+recode2 <- function(x, na.rm = FALSE){if_else(x <= 6, 1, 0, missing = NULL)}
+ah_h1hr2_2 <- ah_h1hr2 %>% mutate_at(vars(contains('H1HR2')), recode2)
+#add up by row
+ah_h1hr2_2 <- ah_h1hr2_2 %>% rowwise() %>% mutate(total = sum(c_across(where(is.numeric))))
+#subtract AID from total
+ah_h1hr2_2 <- ah_h1hr2_2 %>% mutate(total = total - AID)
+#freq tab
+household_freq <- ah_h1hr2_2 %>% group_by(total) %>% summarise(freq = n())
+household_freq %>%
+  knitr::kable(caption = "Frequency tabulation of household members") %>%
+  kableExtra::kable_classic()
+```
+```{r}
+#histogram
+ggplot(ah_h1hr2_2, aes(total)) + geom_histogram() + theme_bw() + xlab("Total household members")
+```
+
+</div>
+
+##
+**Number of sisters**
+
+<div class="answer">
+```{r}
+ah_h1hr3 <- ahcomplete %>%
+    # select columns
+    select(AID, starts_with("H1HR3")
+)
+#recode values to 1 or 0, to later sum
+#responses of sister (8) where coded as 1 and all others 0
+ah_h1hr3$AID <- as.numeric(ah_h1hr3$AID)
+recode3 <- function(x, na.rm = FALSE){if_else(x == 8, 1, 0, missing = NULL)}
+ah_h1hr3_3 <- ah_h1hr3 %>% mutate_at(vars(contains('H1HR3')), recode3)
+#add up by row
+ah_h1hr3_3 <- ah_h1hr3_3 %>% rowwise() %>% mutate(total = sum(c_across(where(is.numeric))))
+#subtract AID from total
+ah_h1hr3_3 <- ah_h1hr3_3 %>% mutate(total = total - AID)
+#freq tab
+sisters_freq <- ah_h1hr3_3 %>% group_by(total) %>% summarise(freq = n())
+sisters_freq %>%
+  knitr::kable(caption = "Frequency tabulation of sisters") %>%
+  kableExtra::kable_classic()
+```
+
+```{r}
+#histogram
+ggplot(ah_h1hr3_3, aes(total)) + geom_histogram() + theme_bw() + xlab("Total number of sisters")
+```
+
+</div>
+
+##
+**Number of brothers**
+
+<div class="answer">
+```{r}
+#recode values to 1 or 0, to later sum
+#responses of brother (5) coded as 1, all else 0
+recode4 <- function(x, na.rm = FALSE){if_else(x == 5, 1, 0, missing = NULL)}
+ah_h1hr3_4 <- ah_h1hr3 %>% mutate_at(vars(contains('H1HR3')), recode4)
+#add up by row
+ah_h1hr3_4 <- ah_h1hr3_4 %>% rowwise() %>% mutate(total = sum(c_across(where(is.numeric))))
+#subtract AID from total
+ah_h1hr3_4 <- ah_h1hr3_4 %>% mutate(total = total - AID)
+#freq tab
+brothers_freq <- ah_h1hr3_4 %>% group_by(total) %>% summarise(freq = n())
+brothers_freq %>%
+  knitr::kable(caption = "Frequency tabulation of brothers") %>%
+  kableExtra::kable_classic()
+```
+
+```{r}
+#histogram
+ggplot(ah_h1hr3_4, aes(total)) + geom_histogram() + theme_bw() + xlab("Total number of brothers")
+```
+
+</div>
+
+##
+**Total number of siblings**
+
+<div class="answer">
+```{r}
+#recode values to 1 or 0, to later sum
+#responses of siblings
+recode5 <- function(x, na.rm = FALSE){if_else(x == 5 | x == 8, 1, 0, missing = NULL)}
+ah_h1hr3_5 <- ah_h1hr3 %>% mutate_at(vars(contains('H1HR3')), recode5)
+#add up by row
+ah_h1hr3_5 <- ah_h1hr3_5 %>% rowwise() %>% mutate(total = sum(c_across(where(is.numeric))))
+#subtract AID from total
+ah_h1hr3_5 <- ah_h1hr3_5 %>% mutate(total = total - AID)
+#freq tab
+siblings_freq <- ah_h1hr3_5 %>% group_by(total) %>% summarise(freq = n())
+siblings_freq %>%
+  knitr::kable(caption = "Frequency tabulation of siblings") %>%
+  kableExtra::kable_classic()
+```
+
+```{r}
+#histogram
+ggplot(ah_h1hr3_5, aes(total)) + geom_histogram() + theme_bw() + xlab("Total number of siblings")
+```
+
+</div>
+
+#
+**What proportion of students live with two biological parents? Include the analysis in your R code.**
+
+<div class="answer">
+```{r}
+#recode values to 1 or 0, to later sum
+#responses of siblings
+recode6 <- function(x, na.rm = FALSE){if_else(x == 11 | x == 14, 1, 0, missing = NULL)}
+ah_h1hr3_6 <- ah_h1hr3 %>% mutate_at(vars(contains('H1HR3')), recode5)
+#add up by row
+ah_h1hr3_6 <- ah_h1hr3_6 %>% rowwise() %>% mutate(total = sum(c_across(where(is.numeric))))
+#subtract AID from total
+ah_h1hr3_6 <- ah_h1hr3_6 %>% mutate(total = total - AID)
+#value >2 in total counted as true
+bio_parents_freq <- ah_h1hr3_6 %>% mutate(bio_parents = case_when(total >= 2 ~ 1, total < 2 ~ 0))
+```
+
+The proportion of students who live with two biological parents is `r round(sum(bio_parents_freq$bio_parents)/6504, 3)`.
+
+</div>
+#
+**Calculate the number of household members that are NOT biological mother, biological father, full brother or full sister. Create a contingency table and histogram for this variable.**
+
+<div class="answer">
+```{r}
+#recode values to 1 or 0, to later sum, all sister, brother, mother, father reponses coded to 0, all else 1 
+recode6 <- function(x, na.rm = FALSE){if_else(x == 5 | x == 8 | x == 11 | x == 14 | x == 96 | x == 97 | x == 98 | x == 99, 0, 1, missing = NULL)}
+ah_h1hr3_7 <- ah_h1hr3 %>% mutate_at(vars(contains('H1HR3')), recode6)
+#add up by row
+ah_h1hr3_7 <- ah_h1hr3_7 %>% rowwise() %>% mutate(total = sum(c_across(where(is.numeric))))
+#subtract AID from total
+ah_h1hr3_7 <- ah_h1hr3_7 %>% mutate(total = total - AID)
+#freq tab
+non_bio_freq <- ah_h1hr3_5 %>% group_by(total) %>% summarise(freq = n())
+non_bio_freq %>%
+  knitr::kable(caption = "Frequency tabulation of non-biological household members") %>%
+  kableExtra::kable_classic()
+```
+```{r}
+#histogram
+ggplot(ah_h1hr3_7, aes(total)) + geom_histogram() + theme_bw() + xlab("Total number of non-biological household members")
+```
+
+</div>
+
+<hr>
+Rendered at <tt>`r Sys.time()`</tt>
+
+## Source code
+File is at `r fnamepath`.
+
+### R code used in this document
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
+
+### Complete Rmd code
+```{r comment=''}
+cat(readLines(fnamepath), sep = '\n')
+```
